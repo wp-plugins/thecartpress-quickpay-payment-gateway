@@ -3,7 +3,7 @@
 Plugin Name: TheCartPress - Quickpay Payment Gateway
 Plugin URI: http://perfect-solution.dk
 Description: Integrate your Quickpay payment gateway with TheCartPress.
-Version: 2.0.0
+Version: 2.0.0 (v10 manager)
 Author: PerfectSolution
 Author URI: http://perfect-solution.dk
 */
