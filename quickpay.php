@@ -3,7 +3,7 @@
 Plugin Name: TheCartPress - Quickpay Payment Gateway
 Plugin URI: http://perfect-solution.dk
 Description: Integrate your Quickpay payment gateway with TheCartPress.
-Version: 2.0.0 (v10 manager)
+Version: 2.0.0
 Author: PerfectSolution
 Author URI: http://perfect-solution.dk
 */
@@ -231,12 +231,10 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 			}
 
 			function tcp_quickpay_ipn() {
-                error_log('callback reached');
                 $request_body = file_get_contents("php://input");
                 $json = json_decode( $request_body );
                 
 				if(isset($_GET['instance']) && isset($json->order_id)) {
-                    error_log('instance set and order id set');
 					$instance = $_GET['instance'];
 					if(is_numeric($instance)) {
 						$order_id = intval($json->order_id);
@@ -263,7 +261,6 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 						ActiveCheckout::sendMails( $order_id, $additional );
 					}
 				}
-                error_log('--------------------');
 			}
 
 			function format_price( $price ) {
