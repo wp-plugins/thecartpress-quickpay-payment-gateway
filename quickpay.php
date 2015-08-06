@@ -3,7 +3,7 @@
 Plugin Name: TheCartPress - Quickpay Payment Gateway
 Plugin URI: http://perfect-solution.dk
 Description: Integrate your Quickpay payment gateway with TheCartPress.
-Version: 1.0
+Version: 2.0.0
 Author: PerfectSolution
 Author URI: http://perfect-solution.dk
 */
@@ -62,24 +62,28 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 	function tcp_load_quickpay_plugin() {
 	        
 		class QuickpayForTheCartPress extends TCP_Plugin {
-			const protocol = 7;
 
 			function getFields() {
 				$fields = array(
-					'merchant_id' => array(
-						'title' => __('Quickpay Merchant ID', 'tcp-quickpay'),
+					'quickpay_merchant_id' => array(
+						'title' => __('Merchant ID', 'tcp-quickpay'),
 						'type' => 'text',
-						'description' => __('Type in your merchant ID from Quickpay.', 'tcp-quickpay')
-					),	
-					'quickpay_md5secret' => array(
-						'title' => __('Secret MD5 string', 'tcp-quickpay'),
-						'type' => 'text',
-						'description' => __('This is the unique MD5 secret key, which the system uses to verify your transactions.', 'tcp-quickpay')
+						'description' => __('Your Payment Window agreement merchant id. Found in the "Integration" tab inside the Quickpay manager.', 'tcp-quickpay')
 					),
-					'quickpay_apikey' => array(
-						'title' => __('Quickpay API key', 'tcp-quickpay'),
+                    'quickpay_agreement_id' => array(
+						'title' => __('Agreement ID', 'tcp-quickpay'),
 						'type' => 'text',
-						'description' => 'The API key is unique and can be requested from within the Quickpay Administrator Tool'
+						'description' => __('Your Payment Window agreement id. Found in the "Integration" tab inside the Quickpay manager.', 'tcp-quickpay')
+					),	
+					'quickpay_privatekey' => array(
+						'title' => __('Private key', 'tcp-quickpay'),
+						'type' => 'text',
+						'description' => __('Your Payment Window agreement private key. Found in the "Integration" tab inside the Quickpay manager.', 'tcp-quickpay')
+					),
+					'quickpay_agreement_apikey' => array(
+						'title' => __('API key', 'tcp-quickpay'),
+						'type' => 'text',
+						'description' => 'Your Payment Window agreement API key. Found in the "Integration" tab inside the Quickpay manager.'
 					),
 					'quickpay_language' => array(
 						'title' => __('Language', 'tcp-quickpay'),
@@ -100,14 +104,14 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 					'quickpay_cardtypelock' => array(
 						'title' => __( 'Cardtype lock', 'tcp-quickpay' ), 
 						'type' => 'text', 
-						'description' => __( 'Default: creditcard. Type in the cards you wish to accept (comma separated). See the valid payment types here: <b>http://quickpay.dk/features/cardtypelock/</b>', 'woothemes' ), 
+						'description' => __( 'Default: creditcard. Type in the cards you wish to accept (comma separated). See the valid payment types here: <b>http://quickpay.dk/features/cardtypelock/</b>', 'tcp-quickpay' ), 
 						'default' => __( 'creditcard', 'tcp-quickpay' )					
 					),	
 					'quickpay_autocapture' => array(
 						'title' => __( 'Allow autocapture', 'tcp-quickpay' ), 
 						'type' => 'checkbox', 
 						'label' => __( 'Enable/Disable', 'tcp-quickpay' ), 
-						'description' => __( 'Automatically capture payments.' ), 
+						'description' => __( 'Automatically capture payments.', 'tcp-quickpay' ), 
 						'default' => 'no'
 					),
 					'quickpay_button_text' => array(
@@ -115,7 +119,19 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 						'type' => 'text',
 						'description' => __('The text shown on the button redirecting to the Quickpay payment window', 'tcp-quickpay'),
 						'default' => __('Open Quickpay payment window', 'tcp-quickpay')
-					)
+					),
+					'quickpay_autofee' => array(
+						'title' => __( 'Enable autofee', 'tcp-quickpay' ), 
+						'type' => 'checkbox', 
+						'label' => __( 'Enable/Disable', 'tcp-quickpay' ), 
+						'description' => __( 'If enabled, the fee charged by the acquirer will be calculated and added to the transaction amount.', 'tcp-quickpay' ), 
+						'default' => 'no'
+					),
+					'quickpay_branding_id' => array(
+						'title' => __( 'Branding ID', 'tcp-quickpay' ), 
+						'type' => 'text', 
+						'description' => __( 'Leave empty if you have no custom branding options', 'tcp-quickpay' )				
+					),	
 				);
 
 				return $fields;			
@@ -162,67 +178,85 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 			}
 
 			function showPayForm( $instance, $shippingCountry, $shoppingCart, $order_id ) {
-				$order_number = str_pad($order_id , 4, 0, STR_PAD_LEFT);
 				$data = tcp_get_payment_plugin_data( get_class( $this ), $instance );
 				$notice = $this->getNotice( $instance, $shippingCountry, $shoppingCart, $order_id );
-				$msgtype = 'authorize';
-				$notify_url = add_query_arg( 
-					array(
-						'action' => 'tcp_quickpay_ipn',
-						'instance' => $instance
-					), admin_url( 'admin-ajax.php' ) );
 
-				$continue_url = add_query_arg( 'tcp_checkout', 'ok', tcp_get_the_checkout_url() );
-				$cancel_url = add_query_arg( 'tcp_checkout', 'ko', tcp_get_the_checkout_url() );
+                $params = array(
+                    'agreement_id'      => $data['quickpay_agreement_id'],
+                    'merchant_id'       => $data['quickpay_merchant_id'],
+                    'subscription'      => 0,
+                    'description'       => '',
+                    'language'          => $data['quickpay_language'],
+                    'order_id'          => str_pad($order_id , 4, 0, STR_PAD_LEFT),
+                    'amount'            => $this->format_price( Orders::getTotal( $order_id ) ),
+                    'currency'          => tcp_get_the_currency_iso(),
+                    'continueurl'       => add_query_arg( 'tcp_checkout', 'ok', tcp_get_the_checkout_url() ),
+                    'cancelurl'         => add_query_arg( 'tcp_checkout', 'ko', tcp_get_the_checkout_url() ),
+                    'callbackurl'       => add_query_arg( array( 'action' => 'tcp_quickpay_ipn', 'instance' => $instance ), admin_url( 'admin-ajax.php' ) ),
+                    'autocapture'       => isset($data['quickpay_autocapture']) && $data['quickpay_autocapture'] == 'yes' ? 1 : 0,
+                    'autofee'           => isset($data['quickpay_autofee']) && $data['quickpay_autofee'] == 'yes' ? 1 : 0,
+                    'payment_methods'   => $data['quickpay_cardtypelock'],
+                    'branding_id'       => $data['quickpay_branding_id'],
+                    'version'           => 'v10'
+                );
+                
+                ksort( $params );
 
-				$currency = tcp_get_the_currency_iso();
-				$amount = $this->format_price( Orders::getTotal( $order_id ) );
-				$cardtypelock = $data['quickpay_cardtypelock'];
-				$autocapture = isset($data['quickpay_autocapture']) && $data['quickpay_autocapture'] == 'yes' ? 1 : 0;
-
-				$md5check = md5(
-					self::protocol . $msgtype . $data['merchant_id'] . $data['quickpay_language'] . $order_number
-					.$amount . $currency . $continue_url . $cancel_url . $notify_url . $autocapture
-					.$cardtypelock . $data['quickpay_md5secret']
-				);
-
+                $checksum = hash_hmac("sha256", implode( " ", $params ), $data['quickpay_agreement_apikey'] );   
+                
 				echo '
-					<form id="quickpay_payment_form" action="https://secure.quickpay.dk/form/" method="post">
-						<input type="hidden" name="protocol" value="'.self::protocol.'" />
-						<input type="hidden" name="msgtype" value="'.$msgtype.'" />
-						<input type="hidden" name="merchant" value="'.$data['merchant_id'].'" />
-						<input type="hidden" name="language" value="'.$data['quickpay_language'].'" />
-						<input type="hidden" name="ordernumber" value="'. $order_number .'" />
-						<input type="hidden" name="amount" value="'.$amount.'" />
-						<input type="hidden" name="currency" value="'.$currency.'" />
-						<input type="hidden" name="continueurl" value="'.$continue_url.'" />
-						<input type="hidden" name="cancelurl" value="'.$cancel_url.'" />
-						<input type="hidden" name="callbackurl" value="'.$notify_url.'" />
-						<input type="hidden" name="autocapture" value="'.$autocapture.'" />
-						<input type="hidden" name="cardtypelock" value="'.$cardtypelock.'" />		
-						<input type="hidden" name="md5check" value="'.$md5check.'" />
-						<input type="submit" value="'.$data['quickpay_button_text'].'" />
-					</form>
+                    <form action="https://payment.quickpay.net/" method="post" id="quickpay-payment-form">
+                        <input type="hidden" name="version" value="' . $params['version'] .'">
+                        <input type="hidden" name="merchant_id" value="' . $params['merchant_id'] . '">
+                        <input type="hidden" name="agreement_id" value="' . $params['agreement_id'] . '">
+                        <input type="hidden" name="subscription" value="' . $params['subscription'] . '">
+                        <input type="hidden" name="description" value="' . $params['description'] . '">
+                        <input type="hidden" name="language" value="' . $params['language'] . '">
+                        <input type="hidden" name="order_id" value="' . $params['order_id'] . '">
+                        <input type="hidden" name="amount" value="' . $params['amount'] . '">
+                        <input type="hidden" name="currency" value="' . $params['currency'] . '">
+                        <input type="hidden" name="continueurl" value="' . $params['continueurl'] . '">
+                        <input type="hidden" name="cancelurl" value="' . $params['cancelurl'] . '">
+                        <input type="hidden" name="callbackurl" value="' . $params['callbackurl'] . '">
+                        <input type="hidden" name="autocapture" value="' . $params['autocapture'] . '">
+                        <input type="hidden" name="autofee" value="' . $params['autofee'] . '">
+                        <input type="hidden" name="payment_methods" value="' . $params['payment_methods'] . '">
+                        <input type="hidden" name="branding_id" value="' . $params['branding_id'] . '">
+                        <input type="hidden" name="checksum" value="' . $checksum . '">
+                        <input type="submit" value="' .$data['quickpay_button_text'].'" /><br>
+                    </form> 
 				';
 				echo '<p>', $notice, '</p>';
-				Orders::editStatus( $order_id, $data['new_status'] );
 				require_once( TCP_CHECKOUT_FOLDER . 'ActiveCheckout.class.php' );
 			}
 
 			function tcp_quickpay_ipn() {
-				if(isset($_GET['instance']) && isset($_POST['qpstat'])) {
-					$response = (object) $_POST;
+                $request_body = file_get_contents("php://input");
+                $json = json_decode( $request_body );
+                
+				if(isset($_GET['instance']) && isset($json->order_id)) {
 					$instance = $_GET['instance'];
 					if(is_numeric($instance)) {
-						$order_id = intval($response->ordernumber);
+						$order_id = intval($json->order_id);
 						// Retrieve gateway plugin data
-						$data = (object) tcp_get_payment_plugin_data( 'QuickpayForTheCartPress', $instance );
+						$settings = (object) tcp_get_payment_plugin_data( 'QuickpayForTheCartPress', $instance );
 						// Validate the response from Quickpay and set new order state
-						$order_status = $this->validate_response($response, $data->quickpay_md5secret) ? Orders::$ORDER_PROCESSING : tcp_get_cancelled_order_status();
+						$order_status = $this->validate_response($settings) ? $settings->new_status : tcp_get_cancelled_order_status();
+                        
+                        // Last operation
+                        $operation = end( $json->operations );
+                        
 						// Transaction status
-						$additional = 'Transaction status: ' . $response->qpstatmsg;
+						$additional = 'Transaction status: ' . $operation->aq_status_msg;
+                        
+                        // Check if this is a test transaction
+                        if( $json->test_mode == 'true' ) {
+                            $additional .= "\n";
+                            $additional .= 'NB: This is a test transaction!';
+                        }
+                        
 						// Update the order with new state, transaction id and transaction status message
-						Orders::editStatus( $order_id, $order_status, $response->transaction, $additional );
+						Orders::editStatus( $order_id, $order_status, $json->id, $additional );
 						// Send order email
 						ActiveCheckout::sendMails( $order_id, $additional );
 					}
@@ -248,14 +282,16 @@ if ( ! class_exists( 'TCPSkeletonLoader' ) ) {
 				return FALSE;				
 			}
 
-			static function validate_response($response, $secret) {
-				if(isset($response->ordernumber) AND isset($response->qpstat)) {
-					if(self::response_md5($response, $secret) == $response->md5check AND $response->qpstat === '000') {
-						return TRUE;
-					}
-					return FALSE;
-				}	
-				return FALSE;		
+			static function validate_response( $settings ) 
+            {
+                $request_body = file_get_contents("php://input");
+             
+                if( ! isset( $_SERVER["HTTP_QUICKPAY_CHECKSUM_SHA256"] ) ) 
+                {
+                    return FALSE;
+                }
+
+                return hash_hmac( 'sha256', $request_body, $settings->quickpay_privatekey ) == $_SERVER["HTTP_QUICKPAY_CHECKSUM_SHA256"];	
 			}
 		}
 

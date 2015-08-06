@@ -40,7 +40,7 @@ class Quickpay_Form_Builder {
 
 	public static function output($output, $field) {
 		$html = "<tr valign='top'>
-					<th scope='row'><label for='{$id}'>{$field['title']}:</label></th>
+					<th scope='row'><label for='{$field['title']}'>{$field['title']}:</label></th>
 					<td>{$output}</td>
 				 </tr>";
 		echo $html;
